@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>記事詳細 - ナレッジベース</title>
+    <!-- 共通CSSの読み込み -->
+    <link rel="stylesheet" href="css/style.css">
+    
+    <!-- 記事詳細ページ固有のインラインスタイル -->
+    <style>
+        /* アクション領域のスタイル */
+        .article-actions {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .top-actions {
+            justify-content: flex-start;
+        }
+        
+        .bottom-actions {
+            justify-content: flex-end;
+            margin-top: 30px;
+        }
+        
+        /* エラーメッセージ強調 */
+        .error-message a {
+            color: #0056b3;
+            text-decoration: underline;
+        }
+    </style>
+    
+    <!-- 必要なJavaScriptライブラリの読み込み -->
+    <!-- schema.js - データ構造の定義 -->
+    <script src="js/core/schema.js"></script>
+    <!-- database.js - IndexedDBデータベース操作 -->
+    <script src="js/core/database.js"></script>
+    <!-- converter.js - 記事データをHTML形式に変換するユーティリティ -->
+    <script src="js/core/converter.js"></script>
+    <!-- jsonHelper.js - JSON操作のヘルパー関数 -->
+    <script src="js/util/jsonHelper.js"></script>
+    <!-- sharedStatus.js - アプリケーション全体で共有される状態管理 -->
+    <script src="js/util/sharedStatus.js"></script>
+    <!-- api.js - KB名前空間内のAPI関数を提供 -->
+    <script src="js/core/api.js"></script>
+</head>
+
+<body>
+    <!-- ヘッダー部分 - サイト名とナビゲーションを表示 -->
+    <header>
+        <div class="header-container">
+            <!-- サイトタイトル -->
+            <h1 class="site-title">ナレッジベース</h1>
+            <!-- ナビゲーションメニュー -->
+            <nav class="main-nav">
+                <ul>
+                    <li><a href="index.html">記事一覧</a></li>
+                    <!-- 今後追加するナビゲーションリンクはここに配置 -->
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <!-- メインコンテンツのコンテナ - レイアウトを中央に配置 -->
+    <div class="container">
+        <!-- 上部アクション領域 - 記事操作用のボタンを表示 -->
+        <div class="article-actions top-actions">
+            <!-- 一覧に戻るボタン - クリックで記事一覧に遷移 -->
+            <button id="back-to-list-btn" class="btn" onclick="window.location.href='index.html'">一覧に戻る</button>
+            <!-- 編集ボタン - クリックでエディタページに遷移（JavaScript経由） -->
+            <button id="edit-article-btn" class="btn">編集</button>
+        </div>
+
+        <!-- メインコンテンツ部分 - 記事の本文を表示 -->
+        <main>
+            <!-- 記事表示領域 - JavaScriptでこの要素に記事内容が挿入される -->
+            <div id="article-view" class="article-view">
+                <!-- 初期表示の読み込み中メッセージ（記事データが表示されると置き換えられる） -->
+                <div class="loading-indicator">記事を読み込み中...</div>
+            </div>
+        </main>
+
+        <!-- 下部アクション領域 - 記事削除ボタンを表示 -->
+        <div class="article-actions bottom-actions">
+            <!-- 削除ボタン - クリックで削除確認ダイアログを表示（JavaScript経由） -->
+            <button id="delete-article-btn" class="btn btn-secondary">記事を削除</button>
+        </div>
+    </div>
+</body>
+
+<script>
+    // 記事閲覧ページのメインスクリプト
+    // DOMが完全に読み込まれた後に実行される
+    document.addEventListener('DOMContentLoaded', async () => {
+        // ステップ1: URLパラメータから記事IDを取得
+        // URLクエリパラメータを解析するURLSearchParamsオブジェクトを作成
+        const urlParams = new URLSearchParams(window.location.search);
+        // 'id'パラメータの値を取得（例: '?id=123'の場合、'123'が返される）
+        const articleId = urlParams.get('id');
+        
+        /**
+         * 記事データをHTMLに変換して表示する関数
+         * @param {Object} articleData - データベースから取得した記事データオブジェクト
+         */
+        function displayArticle(articleData) {
+            // 記事を表示する要素を取得
+            const articleView = document.getElementById('article-view');
+            
+            // ローディング表示を削除（innerHTML = ''で要素内のコンテンツをクリア）
+            articleView.innerHTML = '';
+            
+            // 記事データをHTMLに変換
+            // Converter.jsのarticleToHtml関数を使用して記事オブジェクトをHTML文字列に変換
+            const articleHtml = Converter.articleToHtml(articleData);
+            
+            // 変換されたHTMLを表示領域に挿入
+            articleView.innerHTML = articleHtml;
+        }
+
+        // ステップ2: 記事IDが存在しない場合のエラーハンドリング
+        if (!articleId) {
+            // 記事IDがない場合はエラーメッセージを表示
+            document.getElementById('article-view').innerHTML = 
+                '<div class="error-message">記事IDが指定されていません。<a href="index.html">一覧に戻る</a></div>';
+            return; // 以降の処理を中断
+        }
+        
+        // ステップ3: 記事の取得と表示
+        try {
+            // KBシステムの初期化（データベース接続など）
+            const initialized = await KB.initialize();
+            if (!initialized) {
+                // 初期化が完了していない場合は警告を表示（処理は続行）
+                console.warn('初期化が完了していません。一部機能が制限される可能性があります。');
+            }
+            
+            // 記事IDを使ってデータベースから記事を取得
+            const article = await KB.articles.get(articleId);
+            // 記事が見つからない場合のエラーハンドリング
+            if (!article) {
+                document.getElementById('article-view').innerHTML = 
+                    '<div class="error-message">記事が見つかりませんでした。<a href="index.html">一覧に戻る</a></div>';
+                return; // 以降の処理を中断
+            }
+            
+            // ページタイトルを記事タイトルに更新
+            document.title = `${article.title || '無題の記事'} - ナレッジベース`;
+            
+            // 記事データを表示（displayArticle関数を呼び出し）
+            displayArticle(article);
+            
+            // ステップ4: ボタンのイベントリスナー設定
+            
+            // 編集ボタンのクリックイベント - エディタページに遷移
+            document.getElementById('edit-article-btn').addEventListener('click', () => {
+                // 記事IDをURLパラメータに含めてエディタページへ遷移
+                window.location.href = `editor.html?id=${articleId}`;
+            });
+            
+            // 削除ボタンのクリックイベント - 確認後に記事を削除
+            document.getElementById('delete-article-btn').addEventListener('click', async () => {
+                // 削除前に確認ダイアログを表示
+                if (confirm('記事を削除してもよろしいですか？')) {
+                    try {
+                        // データベースから記事を削除
+                        await KB.articles.delete(articleId);
+                        // 成功メッセージを表示
+                        alert('記事を削除しました');
+                        // 記事一覧ページに遷移
+                        window.location.href = 'index.html';
+                    } catch (error) {
+                        // 削除エラーが発生した場合はエラーメッセージを表示
+                        alert(`削除エラー: ${error.message || '不明なエラー'}`);
+                    }
+                }
+                // キャンセルした場合は何もせず処理終了
+            });
+            
+        } catch (error) {
+            // ステップ5: 全体のエラーハンドリング
+            // 予期せぬエラーが発生した場合はエラーメッセージを表示
+            document.getElementById('article-view').innerHTML = 
+                `<div class="error-message">エラーが発生しました: ${error.message || '不明なエラー'}</div>`;
+            // コンソールにも詳細なエラー情報を出力
+            console.error('記事表示エラー:', error);
+        }
+    });
+</script>
+</html> 

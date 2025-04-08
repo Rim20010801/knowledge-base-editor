@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ナレッジベース - エディタ</title>
+    <style>
+        body { font-family: sans-serif; max-width: 960px; margin: 0 auto; padding: 20px; }
+        .header { padding: 15px 0; border-bottom: 1px solid #ddd; margin-bottom: 20px; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], textarea { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        textarea { min-height: 300px; font-family: monospace; resize: vertical; }
+        .btn { padding: 8px 16px; border: none; border-radius: 4px; color: white; cursor: pointer; margin-right: 10px; }
+        .btn-save { background-color: #2ecc71; }
+        .btn-preview { background-color: #9b59b6; }
+        .btn-export { background-color: #3498db; }
+        .btn-cancel { background-color: #e74c3c; }
+        .notification { position: fixed; top: 20px; right: 20px; padding: 10px 20px; border-radius: 4px; 
+                      color: white; font-weight: bold; z-index: 1000; }
+        .success-notification { background-color: #2ecc71; }
+        .error-notification { background-color: #e74c3c; }
+        .info-notification { background-color: #3498db; }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.7);
+            z-index: 9999;
+            overflow: auto;
+        }
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 20px;
+            width: 90%;
+            max-width: 800px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            position: relative;
+        }
+        .modal-close {
+            position: absolute;
+            top: 10px;
+            right: 20px;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            color: #333;
+        }
+        .modal-close:hover {
+            color: #f00;
+        }
+        .preview-content {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+        
+        /* マークダウンプレビューのスタイル */
+        .preview-content h1, .preview-content h2, .preview-content h3 { margin-top: 0.5em; margin-bottom: 0.5em; }
+        .preview-content ul, .preview-content ol { padding-left: 2em; }
+        .preview-content p { margin: 0.5em 0; }
+        .preview-content code { background-color: #f1f1f1; padding: 2px 4px; border-radius: 3px; }
+        .preview-content pre { background-color: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; }
+        .article-meta { margin: 10px 0; color: #666; font-size: 0.9em; }
+        .article-tags { margin: 10px 0; }
+        .tag { background-color: #e0e0e0; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; margin-right: 5px; }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1 id="editor-title">記事作成</h1>
+        <a href="index.html">トップに戻る</a>
+    </header>
+
+    <main>
+        <div class="form-group">
+            <label for="article-title">タイトル:</label>
+            <input type="text" id="article-title" placeholder="記事のタイトルを入力">
+        </div>
+        <div class="form-group">
+            <label for="article-category">カテゴリ:</label>
+            <input type="text" id="article-category" placeholder="カテゴリを入力">
+        </div>
+        <div class="form-group">
+            <label for="article-tags">タグ:</label>
+            <input type="text" id="article-tags" placeholder="カンマ区切りでタグを入力">
+        </div>
+        <div class="form-group">
+            <label for="markdown-editor">マークダウンエディタ:</label>
+            <textarea id="markdown-editor" placeholder="マークダウン形式で記事を入力してください..." rows="20"></textarea>
+        </div>
+
+        <div class="actions">
+            <button id="save-article" class="btn btn-save">保存</button>
+            <button id="preview-article" class="btn btn-preview">プレビュー</button>
+            <button id="export-article" class="btn btn-export">エクスポート</button>
+            <button id="cancel-editing" class="btn btn-cancel">キャンセル</button>
+        </div>
+    </main>
+
+    <!-- プレビューモーダル -->
+    <div id="preview-modal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closePreviewModal()">&times;</span>
+            <h2>プレビュー</h2>
+            <div id="preview-content" class="preview-content"></div>
+            <div style="margin-top: 15px; text-align: right;">
+                <button class="btn btn-cancel" onclick="closePreviewModal()">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 通知を表示する機能 -->
+    <script>
+        function showNotification(type, message) {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}-notification`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            // 3秒後に消える
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        window.showLocalNotification = showNotification; // グローバルで利用可能にする
+    </script>
+
+    <!-- 依存関係を適切な順序で読み込み -->
+    <!-- 1. コア機能（スキーマ、コンバーター、データベース） -->
+    <script src="js/core/schema.js"></script>
+    <script src="js/core/converter.js"></script>
+    <script src="js/core/database.js"></script>
+
+    <!-- 2. ユーティリティ（JSON変換、ストレージ、共有ステータス） -->
+    <script src="js/util/debounce.js"></script>
+    <script src="js/util/jsonHelper.js"></script>
+    <script src="js/util/storage.js"></script>
+    <script src="js/util/sharedStatus.js"></script>
+
+    <!-- 3. 検索と索引 -->
+    <script src="js/core/indexer.js"></script>
+    <script src="js/core/search.js"></script>
+
+    <!-- 4. API -->
+    <script src="js/core/api.js"></script>
+
+    <!-- エディター固有の機能 -->
+    <script>
+        // 名前空間の初期化
+        window.KB = window.KB || {};
+        window.KB.editor = window.KB.editor || {
+            article: null,
+            currentArticle: null,
+            originalContent: ''
+        };
+
+        // 記事のリセット（新規作成用）
+        function resetArticle() {
+            window.KB.editor.article = {
+                id: 'article_' + Date.now(),
+                title: '',
+                category: '',
+                author: '',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                tags: [],
+                content: ''
+            };
+        }
+
+        // フォームから記事情報を更新
+        function updateArticleFromForm() {
+            console.log('updateArticleFromForm が呼び出されました');
+            
+            if (!window.KB.editor.article) {
+                console.error('updateArticleFromForm: window.KB.editor.article が未定義です');
+                return false;
+            }
+            
+            const article = window.KB.editor.article;
+            
+            const titleEl = document.getElementById('article-title');
+            const categoryEl = document.getElementById('article-category');
+            const tagsEl = document.getElementById('article-tags');
+            const editorEl = document.getElementById('markdown-editor');
+            
+            if (titleEl) article.title = titleEl.value || '';
+            if (categoryEl) article.category = categoryEl.value || '';
+            if (tagsEl && tagsEl.value) {
+                const tagsArray = tagsEl.value.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
+                article.tags = tagsArray;
+            }
+            if (editorEl) article.content = editorEl.value || '';
+            
+            article.updatedAt = new Date().toISOString();
+            
+            return true;
+        }
+
+        // 記事保存
+        async function saveArticle() {
+            console.log('saveArticle 関数が呼び出されました');
+            
+            if (!window.KB.editor.article) {
+                console.error('KB.editor.article が未定義です');
+                showNotification('error', '記事オブジェクトが未定義です');
+                return false;
+            }
+            
+            try {
+                if (!updateArticleFromForm()) {
+                    console.error('updateArticleFromForm が失敗しました');
+                    return false;
+                }
+                
+                const article = window.KB.editor.article;
+                const isNew = !window.KB.editor.currentArticle;
+                
+                showNotification('info', '保存中...');
+                
+                // データベースへの保存を試みる（複数の保存方法を試す）
+                let saved = null;
+                
+                // 1. window.KB.database.saveArticle を使用
+                if (window.KB.database && typeof window.KB.database.saveArticle === 'function') {
+                    try {
+                        console.log("KB.database.saveArticle で保存を試みます");
+                        saved = await window.KB.database.saveArticle(article);
+                        // saveArticleがundefinedを返す場合、articleをsavedに設定
+                        if (saved === undefined) {
+                            saved = article;
+                        }
+                        console.log("KB.database.saveArticle の結果:", saved);
+                    } catch (e) {
+                        console.error("KB.database.saveArticle でのエラー:", e);
+                    }
+                }
+                
+                // 2. window.KB.storage.saveArticle を使用
+                if (!saved && window.KB.storage && typeof window.KB.storage.saveArticle === 'function') {
+                    try {
+                        console.log("KB.storage.saveArticle で保存を試みます");
+                        saved = await window.KB.storage.saveArticle(article);
+                        if (saved === undefined) {
+                            saved = article;
+                        }
+                        console.log("KB.storage.saveArticle の結果:", saved);
+                    } catch (e) {
+                        console.error("KB.storage.saveArticle でのエラー:", e);
+                    }
+                }
+                
+                // 3. LocalStorage フォールバック
+                if (!saved && article && article.id) {
+                    try {
+                        console.warn("主要な保存方法が失敗または利用不可です。LocalStorageにフォールバックします");
+                        localStorage.setItem('kb_article_' + article.id, JSON.stringify(article));
+                        saved = article;
+                        console.log('LocalStorageへのフォールバック保存が成功:', saved);
+                    } catch (lsError) {
+                        console.error('LocalStorage保存エラー:', lsError);
+                    }
+                }
+                
+                // 保存結果の確認
+                if (saved && saved.id) {
+                    // 成功時の処理
+                    window.KB.editor.currentArticle = saved.id;
+                    window.KB.editor.originalContent = saved.content || '';
+                    
+                    // 最後に編集した記事のIDを保存
+                    try {
+                        localStorage.setItem('lastArticleId', saved.id);
+                    } catch (lsError) {
+                        console.warn('lastArticleIdの保存に失敗しましたが、記事自体は保存されています:', lsError);
+                    }
+                    
+                    // 保存完了通知
+                    showNotification('success', '記事を保存しました');
+                    return true;
+                } else {
+                    console.error('すべての方法で記事の保存に失敗しました');
+                    showNotification('error', '保存に失敗しました');
+                    return false;
+                }
+            } catch (error) {
+                console.error('記事保存処理の途中で予期せぬエラー:', error);
+                showNotification('error', `保存エラー: ${error.message || '不明なエラー'}`);
+                return false;
+            }
+        }
+
+        // 記事プレビュー
+        function previewArticle() {
+            if (!window.KB.editor.article) {
+                console.error('KB.editor.article が見つかりません');
+                showNotification('error', '記事データがありません');
+                return;
+            }
+            
+            updateArticleFromForm();
+            
+            const article = window.KB.editor.article;
+            const modal = document.getElementById('preview-modal');
+            const content = document.getElementById('preview-content');
+            
+            if (!modal || !content) {
+                console.error('プレビューモーダルまたはコンテンツエレメントが見つかりません');
+                showNotification('error', 'プレビューモーダルがありません');
+                return;
+            }
+            
+            try {
+                // コンバーターを使用して完全なHTMLに変換
+                if (window.KB.converter && typeof window.KB.converter.articleToHtml === 'function') {
+                    // 完全なHTMLレンダリング（articleToHtml関数を使用）
+                    content.innerHTML = window.KB.converter.articleToHtml(article);
+                    modal.style.display = 'block';
+                    return;
+                }
+                
+                // フォールバック: 手動でHTMLを組み立て
+                let html = `
+                    <h1>${article.title || '(無題)'}</h1>
+                    <div class="article-meta">
+                    <span>カテゴリ: ${article.category || 'なし'}</span>
+                    <span>更新: ${new Date(article.updatedAt).toLocaleString()}</span>
+                    </div>
+                `;
+                
+                if (article.tags && article.tags.length > 0) {
+                    html += '<div class="article-tags">';
+                    for (let i = 0; i < article.tags.length; i++) {
+                        html += `<span class="tag">${article.tags[i]}</span>` + (i < article.tags.length - 1 ? ' ' : '');
+                    }
+                    html += '</div>';
+                }
+                
+                html += '<div class="article-content">';
+                
+                // マークダウンをHTMLに変換
+                if (window.KB.converter && typeof window.KB.converter.markdownToHtml === 'function') {
+                    // converter.jsのmarkdownToHtml関数を使用
+                    html += window.KB.converter.markdownToHtml(article.content);
+                } else {
+                    // フォールバック: 簡易版のマークダウンコンバーター
+                    html += simpleMarkdownToHtml(article.content);
+                }
+                
+                html += '</div>';
+                
+                content.innerHTML = html;
+                modal.style.display = 'block';
+            } catch (error) {
+                console.error('プレビュー表示エラー:', error);
+                showNotification('error', `プレビュー表示エラー: ${error.message || '不明なエラー'}`);
+            }
+        }
+
+        // エクスポート機能
+        function exportArticle() {
+            if (!window.KB.editor.article) {
+                console.error('KB.editor.article が見つかりません');
+                showNotification('error', '記事データがありません');
+                return;
+            }
+            
+            updateArticleFromForm();
+            
+            try {
+                // jsonHelperを使用してJSON文字列に変換
+                let jsonStr;
+                if (window.KB.jsonHelper && typeof window.KB.jsonHelper.articleToJson === 'function') {
+                    jsonStr = window.KB.jsonHelper.articleToJson(window.KB.editor.article);
+                } else {
+                    // フォールバック: 直接JSON.stringifyを使用
+                    jsonStr = JSON.stringify(window.KB.editor.article, null, 2);
+                }
+                
+                // Blobを作成してダウンロードリンクを生成
+                const blob = new Blob([jsonStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `article_${window.KB.editor.article.id}.json`;
+                document.body.appendChild(a);
+                a.click();
+                
+                // クリーンアップ
+                setTimeout(() => {
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }, 0);
+                
+                showNotification('success', '記事をエクスポートしました');
+            } catch (error) {
+                console.error('エクスポートエラー:', error);
+                showNotification('error', `エクスポートエラー: ${error.message || '不明なエラー'}`);
+            }
+        }
+
+        // エディターキャンセル
+        function cancelEditor() {
+            window.location.href = 'index.html';
+        }
+
+        // プレビューモーダルを閉じる
+        function closePreviewModal() {
+            document.getElementById('preview-modal').style.display = 'none';
+        }
+
+        // シンプルなマークダウン→HTML変換（コンバーターがない場合のフォールバック）
+        function simpleMarkdownToHtml(markdown) {
+            if (!markdown) return '';
+            
+            // 基本的なマークダウン要素を変換
+            let html = markdown
+                // エスケープ処理
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                
+                // 見出し
+                .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+                .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+                .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+                
+                // コードブロック
+                .replace(/```([^`]+)```/g, '<pre><code>$1</code></pre>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                
+                // リスト
+                .replace(/^\* (.+)$/gm, '<li>$1</li>')
+                .replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>')
+                
+                // 強調
+                .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                .replace(/_([^_]+)_/g, '<em>$1</em>')
+                
+                // リンクと画像
+                .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
+                .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1">');
+            
+            // リスト要素をリストタグでグループ化
+            let lines = html.split('\n');
+            let result = [];
+            let inOrderedList = false;
+            let inUnorderedList = false;
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const nextLine = i < lines.length - 1 ? lines[i+1] : '';
+                
+                if (line.startsWith('<li>') && line.endsWith('</li>')) {
+                    // リスト開始
+                    if (!inOrderedList && !inUnorderedList) {
+                        const isOrdered = /^(\d+)\. /.test(markdown.split('\n')[i] || '');
+                        result.push(isOrdered ? '<ol>' : '<ul>');
+                        inOrderedList = isOrdered;
+                        inUnorderedList = !isOrdered;
+                    }
+                    
+                    result.push(line);
+                    
+                    // リスト終了
+                    if (!nextLine.startsWith('<li>')) {
+                        result.push(inOrderedList ? '</ol>' : '</ul>');
+                        inOrderedList = false;
+                        inUnorderedList = false;
+                    }
+                } else if (line.trim() && !line.startsWith('<h') && !line.startsWith('<pre>') && !line.startsWith('<img')) {
+                    // 通常の段落
+                    if (!line.startsWith('<')) {
+                        result.push(`<p>${line}</p>`);
+                    } else {
+                        result.push(line);
+                    }
+                } else {
+                    result.push(line);
+                }
+            }
+            
+            return result.join('\n');
+        }
+
+        // DOMContentLoaded イベントで初期化
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOMContentLoaded イベントが発火しました');
+            
+            // グローバル名前空間チェック
+            if (!window.KB) {
+                console.error('window.KB オブジェクトが見つかりません');
+                window.KB = {};
+            }
+            
+            // エディター名前空間チェック
+            if (!window.KB.editor) {
+                console.log('window.KB.editor を初期化します');
+                window.KB.editor = {
+                    article: null,
+                    currentArticle: null,
+                    originalContent: ''
+                };
+            }
+            
+            // 新規記事の作成または既存記事の読み込み
+            const urlParams = new URLSearchParams(window.location.search);
+            const articleId = urlParams.get('id') || localStorage.getItem('lastArticleId');
+            
+            if (articleId) {
+                console.log(`記事ID: ${articleId} を読み込みます`);
+                
+                // データベースから記事を取得
+                if (window.KB.database && typeof window.KB.database.getArticle === 'function') {
+                    window.KB.database.getArticle(articleId)
+                        .then(article => {
+                            if (article) {
+                                console.log('記事を読み込みました:', article);
+                                window.KB.editor.article = article;
+                                window.KB.editor.currentArticle = article.id;
+                                window.KB.editor.originalContent = article.content || '';
+                                
+                                // フォームに値をセット
+                                populateForm(article);
+                                
+                                // タイトル更新
+                                document.getElementById('editor-title').textContent = '記事編集: ' + article.title;
+                            } else {
+                                console.warn(`記事ID: ${articleId} が見つかりませんでした`);
+                                resetArticle();
+                            }
+                        })
+                        .catch(error => {
+                            console.error('記事の読み込みエラー:', error);
+                            resetArticle();
+                        });
+                } else {
+                    // LocalStorageから読み込みを試みる
+                    try {
+                        const savedArticle = localStorage.getItem('kb_article_' + articleId);
+                        if (savedArticle) {
+                            const article = JSON.parse(savedArticle);
+                            window.KB.editor.article = article;
+                            window.KB.editor.currentArticle = article.id;
+                            window.KB.editor.originalContent = article.content || '';
+                            
+                            // フォームに値をセット
+                            populateForm(article);
+                            
+                            // タイトル更新
+                            document.getElementById('editor-title').textContent = '記事編集: ' + article.title;
+                        } else {
+                            resetArticle();
+                        }
+                    } catch (error) {
+                        console.error('LocalStorageからの読み込みエラー:', error);
+                        resetArticle();
+                    }
+                }
+            } else {
+                console.log('新規記事を作成します');
+                resetArticle();
+            }
+            
+            // フォームにデータを入力
+            function populateForm(article) {
+                const titleEl = document.getElementById('article-title');
+                const categoryEl = document.getElementById('article-category');
+                const tagsEl = document.getElementById('article-tags');
+                const editorEl = document.getElementById('markdown-editor');
+                
+                if (titleEl) titleEl.value = article.title || '';
+                if (categoryEl) categoryEl.value = article.category || '';
+                if (tagsEl && article.tags) tagsEl.value = article.tags.join(', ');
+                if (editorEl) editorEl.value = article.content || '';
+            }
+            
+            // イベントリスナーの設定
+            document.getElementById('save-article').addEventListener('click', saveArticle);
+            document.getElementById('preview-article').addEventListener('click', previewArticle);
+            document.getElementById('export-article').addEventListener('click', exportArticle);
+            document.getElementById('cancel-editing').addEventListener('click', cancelEditor);
+            
+            // モーダル外クリックで閉じる
+            window.addEventListener('click', function(event) {
+                const modal = document.getElementById('preview-modal');
+                if (event.target === modal) {
+                    modal.style.display = 'none';
+                }
+            });
+            
+            // 自動保存の設定（30秒ごと）
+            const textarea = document.getElementById('markdown-editor');
+            if (textarea) {
+                let saveTimeout;
+                textarea.addEventListener('input', () => {
+                    clearTimeout(saveTimeout);
+                    saveTimeout = setTimeout(() => {
+                        console.log('自動保存を実行します');
+                        saveArticle();
+                    }, 30000);
+                });
+            }
+            
+            console.log('エディターの初期化が完了しました');
+        });
+    </script>
+</body>
+</html> 

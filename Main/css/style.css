@@ -1,0 +1,172 @@
+/* ナレッジベース共通スタイル - 複数ページで使用される基本要素のみ定義 */
+
+/* ===== 基本レイアウト要素 ===== */
+body {
+  /* 日本語フォントを優先的に使用 */
+  font-family: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', Meiryo, sans-serif;
+  color: #333;
+  line-height: 1.6;
+  margin: 0;
+  padding: 0;
+  background-color: #f8f9fa;
+}
+
+/* コンテンツを中央に配置し、最大幅を制限するコンテナ */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* ===== ヘッダー要素 ===== */
+header {
+  background-color: #fff;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  padding: 15px 0;
+  margin-bottom: 20px;
+}
+
+.header-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 20px;
+}
+
+.site-title {
+  font-size: 24px;
+  font-weight: bold;
+  margin: 0;
+}
+
+/* ナビゲーションメニュー */
+nav ul {
+  display: flex;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+nav li {
+  margin-left: 20px;
+}
+
+nav a {
+  color: #333;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+nav a:hover {
+  color: #007bff;
+}
+
+/* ===== ボタン要素 ===== */
+.btn {
+  display: inline-block;
+  padding: 8px 16px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.btn:hover {
+  background-color: #0069d9;
+}
+
+.btn-secondary {
+  background-color: #6c757d;
+}
+
+.btn-secondary:hover {
+  background-color: #5a6268;
+}
+
+/* ===== フォーム要素 ===== */
+.form-group {
+  margin-bottom: 15px;
+}
+
+label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+}
+
+input[type="text"],
+input[type="search"],
+textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  font-size: 16px;
+}
+
+/* ===== 記事一覧 ===== */
+.article-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.article-item {
+  background-color: white;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  padding: 15px;
+  margin-bottom: 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.article-title {
+  font-size: 18px;
+  font-weight: 500;
+  margin: 0;
+  color: #212529;
+}
+
+/* ===== 記事表示コンテナ ===== */
+/* 表示される記事自体のスタイルはConverter.jsで生成されるため、ここではコンテナのみ定義 */
+.article-view {
+  background-color: transparent;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+}
+
+/* ===== ユーティリティ ===== */
+/* エラーメッセージ */
+.error-message {
+  color: #dc3545;
+  padding: 10px;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+  background-color: #f8d7da;
+  margin-bottom: 15px;
+}
+
+/* ローディングインジケーター */
+.loading-indicator {
+  text-align: center;
+  color: #6c757d;
+  padding: 20px;
+}
+
+/* ===== レスポンシブ対応 ===== */
+@media (max-width: 768px) {
+  .container {
+    padding: 10px;
+  }
+  
+  .article-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

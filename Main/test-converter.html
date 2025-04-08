@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JSONからHTML変換テスト</title>
+  <style>
+    body {
+      font-family: 'Hiragino Sans', 'Meiryo', sans-serif;
+      margin: 0;
+      padding: 20px;
+      background-color: #f5f5f5;
+      color: #333;
+    }
+    
+    h1 {
+      border-bottom: 2px solid #3b82f6;
+      padding-bottom: 8px;
+      color: #2563eb;
+    }
+    
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    
+    .editor-container, .preview-container {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      padding: 20px;
+    }
+    
+    .editor-container {
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .editor-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    
+    #jsonEditor {
+      width: 100%;
+      height: 300px;
+      font-family: monospace;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 10px;
+      box-sizing: border-box;
+      resize: vertical;
+    }
+    
+    button {
+      background-color: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 8px 16px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    
+    button:hover {
+      background-color: #1d4ed8;
+    }
+    
+    .preview-container {
+      overflow: auto;
+    }
+    
+    .error {
+      color: #e53e3e;
+      padding: 10px;
+      background-color: #fee2e2;
+      border-radius: 4px;
+      margin-bottom: 10px;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>JSONからHTML変換テスト</h1>
+    
+    <div class="editor-container">
+      <div class="editor-header">
+        <h2>JSONデータ入力</h2>
+        <button id="convertBtn">変換</button>
+      </div>
+      <div id="errorMsg" class="error"></div>
+      <textarea id="jsonEditor">{
+  "title": "JSONからHTML変換のテスト記事",
+  "category": "技術メモ",
+  "tags": ["JavaScript", "HTML", "JSON"],
+  "updatedAt": "2023-05-15T12:30:00Z",
+  "content": [
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "見出しレベル2のテスト"
+    },
+    {
+      "type": "paragraph",
+      "text": "これは段落のテストです。__下線付きテキスト__と**太字テキスト**や`コードスニペット`をインラインで使用できます。また、_斜体テキスト_も使えます。"
+    },
+    {
+      "type": "heading",
+      "level": 3,
+      "text": "見出しレベル3のテスト"
+    },
+    {
+      "type": "paragraph",
+      "text": "カラーテキストのテスト: ==青色テキスト== と !!赤色テキスト!! と @@緑色テキスト@@ です。++ハイライト++もできます。"
+    },
+    {
+      "type": "list",
+      "style": "unordered",
+      "items": [
+        "箇条書き項目1",
+        "箇条書き項目2 - **太字テキスト**を含む",
+        "箇条書き項目3 - `コードスニペット`と_斜体_を含む"
+      ]
+    },
+    {
+      "type": "list",
+      "style": "ordered",
+      "items": [
+        "番号付きリスト項目1",
+        "番号付きリスト項目2",
+        "番号付きリスト項目3 - ==カラーテキスト==付き"
+      ]
+    },
+    {
+      "type": "image",
+      "src": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/JavaScript-logo.png/240px-JavaScript-logo.png",
+      "alt": "JavaScript ロゴ",
+      "caption": "**JavaScript**のロゴ画像",
+      "width": 150
+    },
+    {
+      "type": "paragraph",
+      "text": "これは画像の後の段落です。画像の表示テストに使用されます。画像は常に中央寄せで表示されるようになりました。"
+    },
+    {
+      "type": "image",
+      "src": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/61/HTML5_logo_and_wordmark.svg/240px-HTML5_logo_and_wordmark.svg.png",
+      "alt": "HTML5 ロゴ",
+      "caption": "**HTML5**のロゴ画像",
+      "width": "30%"
+    },
+    {
+      "type": "paragraph",
+      "text": "これは2番目の画像の後の段落です。すべての画像は中央寄せで表示されます。"
+    },
+    {
+      "type": "image",
+      "src": "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d5/CSS3_logo_and_wordmark.svg/240px-CSS3_logo_and_wordmark.svg.png",
+      "alt": "CSS3 ロゴ",
+      "caption": "**CSS3**のロゴ画像",
+      "width": "40%",
+      "height": 120
+    },
+    {
+      "type": "heading",
+      "level": 2,
+      "text": "まとめ"
+    },
+    {
+      "type": "paragraph",
+      "text": "これはJSONからHTMLへの変換テストです。様々な要素が正しく表示されていることを確認してください。"
+    }
+  ]
+}</textarea>
+    </div>
+    
+    <div class="preview-container">
+      <h2>変換結果プレビュー</h2>
+      <div id="htmlPreview"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import Converter from './js/converter.js';
+    
+    document.addEventListener('DOMContentLoaded', function() {
+      const jsonEditor = document.getElementById('jsonEditor');
+      const htmlPreview = document.getElementById('htmlPreview');
+      const convertBtn = document.getElementById('convertBtn');
+      const errorMsg = document.getElementById('errorMsg');
+      
+      // 変換ボタンのクリックイベント
+      convertBtn.addEventListener('click', function() {
+        try {
+          errorMsg.style.display = 'none';
+          
+          // JSONをパース
+          const articleData = JSON.parse(jsonEditor.value);
+          
+          // HTMLに変換
+          const html = Converter.articleToHtml(articleData);
+          
+          // プレビューに表示
+          htmlPreview.innerHTML = html;
+        } catch (e) {
+          // エラー表示
+          errorMsg.textContent = 'エラー: ' + e.message;
+          errorMsg.style.display = 'block';
+          htmlPreview.innerHTML = '';
+        }
+      });
+      
+      // 初期表示
+      convertBtn.click();
+    });
+  </script>
+</body>
+</html> 

@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ナレッジベース</title>
+    <!-- TODO: スタイルシートが必要です -->
+    
+    <!-- コアモジュール（基本機能） -->
+    <script src="js/core/schema.js"></script>
+    <script src="js/core/database.js"></script>
+    <script src="js/core/search.js"></script>
+    <script src="js/core/indexer.js"></script>
+    <script src="js/core/converter.js"></script>
+    
+    <!-- ユーティリティモジュール -->
+    <script src="js/util/debounce.js"></script>
+    <script src="js/util/jsonHelper.js"></script>
+    <script src="js/util/storage.js"></script>
+    <script src="js/util/sharedStatus.js"></script>
+    
+    <!-- UIモジュール -->
+    <script src="js/ui/editor.js"></script>
+    
+    <!-- APIモジュール（統合） -->
+    <script src="js/core/api.js"></script>
+
+    
+    <script>
+        // アプリケーション初期化
+        document.addEventListener('DOMContentLoaded', async () => {
+            // KBシステム初期化
+            const initialized = await KB.initialize();
+            
+            if (!initialized) {
+                console.warn('初期化が完了していません。一部機能が制限される可能性があります。');
+            }
+            
+            // ユーザー名が設定されていなければモーダルを表示
+            if (!localStorage.getItem('user_name')) {
+                document.getElementById('username-modal').style.display = 'block';
+            }
+            
+            // ユーザー名保存ボタン
+            document.getElementById('save-username').addEventListener('click', () => {
+                const username = document.getElementById('username-input').value.trim();
+                if (username) {
+                    localStorage.setItem('user_name', username);
+                    document.getElementById('username-modal').style.display = 'none';
+                    location.reload(); // 再読み込みして初期化
+                } else {
+                    alert('ユーザー名を入力してください');
+                }
+            });
+            
+            // 新規作成ボタン
+            document.getElementById('new-article').addEventListener('click', () => {
+                const article = KB.articles.create();
+                setupEditor(article, true);
+            });
+            
+            // 検索
+            const searchInput = document.getElementById('search-input');
+            searchInput.addEventListener('input', debounce(async () => {
+                const query = searchInput.value.trim();
+                if (query.length > 0) {
+                    const results = await KB.articles.searchFullText(query);
+                    displayArticleList(results);
+                } else {
+                    loadAllArticles();
+                }
+            }, 300));
+            
+            // インポート/エクスポートモーダル
+            document.getElementById('import-export').addEventListener('click', () => {
+                document.getElementById('import-export-modal').style.display = 'block';
+            });
+            
+            document.getElementById('close-modal').addEventListener('click', () => {
+                document.getElementById('import-export-modal').style.display = 'none';
+            });
+            
+            // インポートボタン
+            document.getElementById('import-button').addEventListener('click', async () => {
+                const fileInput = document.getElementById('import-file');
+                if (fileInput.files.length === 0) {
+                    alert('ファイルを選択してください');
+                    return;
+                }
+                
+                try {
+                    const result = await KB.io.processJsonFiles(fileInput.files);
+                    
+                    if (result.status === 'success') {
+                        document.getElementById('import-status').textContent = 
+                            `インポート完了: 新規=${result.new}, 更新=${result.updated}, 変更なし=${result.unchanged}`;
+                        
+                        // 記事一覧を更新
+                        loadAllArticles();
+                    } else {
+                        document.getElementById('import-status').textContent = 
+                            `エラー: ${result.message}`;
+                    }
+                } catch (error) {
+                    console.error('インポートエラー:', error);
+                    document.getElementById('import-status').textContent = 'インポートに失敗しました';
+                }
+            });
+            
+            // 全記事エクスポート
+            document.getElementById('export-all').addEventListener('click', async () => {
+                const articles = await KB.articles.getAll();
+                if (articles.length === 0) {
+                    alert('エクスポートする記事がありません');
+                    return;
+                }
+                
+                KB.io.exportArticles(articles);
+            });
+            
+            // 保存ボタン
+            document.getElementById('save-article').addEventListener('click', async () => {
+                saveCurrentArticle();
+            });
+            
+            // キャンセルボタン
+            document.getElementById('cancel-editing').addEventListener('click', () => {
+                if (confirm('編集中の内容は失われます。よろしいですか？')) {
+                    resetEditor();
+                }
+            });
+            
+            // 記事一覧のロード
+            loadAllArticles();
+        });
+        
+        // すべての記事を読み込んで表示
+        async function loadAllArticles() {
+            const articles = await KB.articles.getAll();
+            displayArticleList(articles);
+        }
+        
+        // 記事一覧を表示
+        function displayArticleList(articles) {
+            const list = document.getElementById('article-list');
+            list.innerHTML = '';
+            
+            if (articles.length === 0) {
+                list.innerHTML = '<li>記事がありません</li>';
+                return;
+            }
+            
+            // 降順（新しい順）に並び替え
+            articles.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+            
+            articles.forEach(article => {
+                const li = document.createElement('li');
+                li.className = 'article-item';
+                li.dataset.articleId = article.id;
+                
+                const title = document.createElement('span');
+                title.className = 'article-title';
+                title.textContent = article.title || '(無題)';
+                
+                const info = document.createElement('div');
+                
+                const lockInfo = document.createElement('span');
+                lockInfo.className = 'lock-info';
+                lockInfo.style.display = 'none';
+                
+                const actions = document.createElement('div');
+                
+                const viewBtn = document.createElement('button');
+                viewBtn.textContent = '表示';
+                viewBtn.addEventListener('click', () => viewArticle(article.id));
+                
+                const editBtn = document.createElement('button');
+                editBtn.textContent = '編集';
+                editBtn.className = 'edit-button';
+                editBtn.addEventListener('click', () => editArticle(article.id));
+                
+                const deleteBtn = document.createElement('button');
+                deleteBtn.textContent = '削除';
+                deleteBtn.addEventListener('click', () => deleteArticle(article.id));
+                
+                actions.appendChild(viewBtn);
+                actions.appendChild(editBtn);
+                actions.appendChild(deleteBtn);
+                
+                info.appendChild(lockInfo);
+                
+                li.appendChild(title);
+                li.appendChild(info);
+                li.appendChild(actions);
+                
+                list.appendChild(li);
+            });
+        }
+        
+        // 記事表示
+        async function viewArticle(id) {
+            try {
+                const article = await KB.articles.get(id);
+                if (!article) {
+                    alert('記事が見つかりませんでした');
+                    return;
+                }
+                
+                const view = document.getElementById('article-view');
+                
+                // HTML変換
+                let html = `<h1>${article.title || '(無題)'}</h1>`;
+                html += `<div class="article-meta">
+                    <span>カテゴリ: ${article.category || 'なし'}</span>
+                    <span>更新: ${new Date(article.updatedAt).toLocaleString()}</span>
+                </div>`;
+                
+                // タグ
+                if (article.tags && article.tags.length > 0) {
+                    html += `<div class="article-tags">
+                        ${article.tags.map(tag => `<span class="tag">${tag}</span>`).join(' ')}
+                    </div>`;
+                }
+                
+                // コンテンツ
+                if (typeof article.content === 'string') {
+                    html += `<div class="article-content">${article.content}</div>`;
+                } else if (Array.isArray(article.content)) {
+                    html += `<div class="article-content">`;
+                    
+                    article.content.forEach(block => {
+                        switch (block.type) {
+                            case 'heading':
+                                const level = block.level || 2;
+                                html += `<h${level}>${block.text || ''}</h${level}>`;
+                                break;
+                            case 'paragraph':
+                                html += `<p>${block.text || ''}</p>`;
+                                break;
+                            case 'image':
+                                html += `<div class="image-block">
+                                    <img src="${block.src || ''}" alt="${block.alt || ''}" style="max-width: 100%;">
+                                    ${block.caption ? `<p class="caption">${block.caption}</p>` : ''}
+                                </div>`;
+                                break;
+                            case 'list':
+                                const tag = block.style === 'ordered' ? 'ol' : 'ul';
+                                html += `<${tag}>`;
+                                if (block.items?.length) {
+                                    block.items.forEach(item => html += `<li>${item}</li>`);
+                                }
+                                html += `</${tag}>`;
+                                break;
+                        }
+                    });
+                    
+                    html += `</div>`;
+                }
+                
+                // アクションボタン
+                html += `<div class="article-actions">
+                    <button id="edit-article-btn">編集する</button>
+                    <button id="export-article-btn">エクスポート</button>
+                </div>`;
+                
+                view.innerHTML = html;
+                
+                // ボタンイベント
+                document.getElementById('edit-article-btn').addEventListener('click', () => {
+                    editArticle(id);
+                });
+                
+                document.getElementById('export-article-btn').addEventListener('click', () => {
+                    KB.io.exportArticle(article);
+                });
+                
+                // 表示切替
+                document.getElementById('editor-container').style.display = 'none';
+                view.style.display = 'block';
+                
+            } catch (error) {
+                console.error('記事表示エラー:', error);
+                alert('記事の表示に失敗しました');
+            }
+        }
+        
+        // 記事編集
+        async function editArticle(id) {
+            try {
+                const article = await KB.articles.edit(id);
+                setupEditor(article, false);
+            } catch (error) {
+                console.error('記事編集エラー:', error);
+                alert(error.message || '記事の編集に失敗しました');
+            }
+        }
+        
+        // 記事削除
+        async function deleteArticle(id) {
+            if (!confirm('記事を削除してもよろしいですか？')) return;
+            
+            try {
+                await KB.articles.delete(id);
+                
+                // 記事一覧を更新
+                loadAllArticles();
+                
+                // 表示をリセット
+                const view = document.getElementById('article-view');
+                view.innerHTML = '<h2>記事を選択してください</h2><p>左側のリストから記事を選択するか、新規作成ボタンをクリックしてください。</p>';
+                view.style.display = 'block';
+                document.getElementById('editor-container').style.display = 'none';
+                
+            } catch (error) {
+                console.error('記事削除エラー:', error);
+                alert(error.message || '記事の削除に失敗しました');
+            }
+        }
+        
+        // 編集中の記事
+        let currentArticle = null;
+        let isNewArticle = false;
+        
+        // エディタセットアップ
+        function setupEditor(article, isNew) {
+            currentArticle = article;
+            isNewArticle = isNew;
+            
+            // フィールド設定
+            document.getElementById('article-title').value = article.title || '';
+            
+            // コンテンツの設定
+            let content = '';
+            
+            if (typeof article.content === 'string') {
+                content = article.content;
+            } else if (Array.isArray(article.content)) {
+                content = article.content
+                    .map(block => {
+                        switch (block.type) {
+                            case 'heading':
+                                return `# ${block.text || ''}`;
+                            case 'paragraph':
+                                return block.text || '';
+                            case 'list':
+                                if (!block.items?.length) return '';
+                                return block.items
+                                    .map(item => block.style === 'ordered' ? `1. ${item}` : `* ${item}`)
+                                    .join('\n');
+                            default:
+                                return '';
+                        }
+                    })
+                    .filter(text => text.length > 0)
+                    .join('\n\n');
+            }
+            
+            document.getElementById('article-content').value = content;
+            
+            // 表示切替
+            document.getElementById('article-view').style.display = 'none';
+            document.getElementById('editor-container').style.display = 'block';
+        }
+        
+        // 現在の記事を保存
+        async function saveCurrentArticle() {
+            if (!currentArticle) return;
+            
+            // 値を取得
+            const title = document.getElementById('article-title').value.trim();
+            const content = document.getElementById('article-content').value;
+            
+            // バリデーション
+            if (!title) {
+                alert('タイトルを入力してください');
+                return;
+            }
+            
+            // 記事を更新
+            currentArticle.title = title;
+            currentArticle.content = content;
+            
+            try {
+                // 保存
+                await KB.articles.save(currentArticle, isNewArticle);
+                
+                // エディタをリセット
+                resetEditor();
+                
+                // 記事一覧を更新
+                loadAllArticles();
+                
+            } catch (error) {
+                console.error('保存エラー:', error);
+                alert('記事の保存に失敗しました');
+            }
+        }
+        
+        // エディタリセット
+        function resetEditor() {
+            if (currentArticle && currentArticle.id) {
+                KB.articles.endEdit(currentArticle.id);
+            }
+            
+            document.getElementById('article-title').value = '';
+            document.getElementById('article-content').value = '';
+            
+            currentArticle = null;
+            isNewArticle = false;
+            
+            document.getElementById('editor-container').style.display = 'none';
+            document.getElementById('article-view').style.display = 'block';
+        }
+        
+        // デバウンス関数（検索用）
+        function debounce(func, wait) {
+            let timeout;
+            return function() {
+                const context = this;
+                const args = arguments;
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(context, args), wait);
+            };
+        }
+    </script>
+</head>
+<!-- TODO: 以下のようなボディ要素が必要です
+<body>
+    - ヘッダー部分 (ナビゲーション、タイトル)
+    - 記事一覧コンテナ (article-list)
+    - 記事表示部分 (article-view)
+    - 編集フォーム (editor-container)
+        - 記事タイトル入力 (article-title)
+        - 記事内容入力 (article-content)
+        - 保存ボタン (save-article)
+        - キャンセルボタン (cancel-editing)
+    - ユーザー名入力モーダル (username-modal)
+        - ユーザー名入力フィールド (username-input)
+        - 保存ボタン (save-username)
+    - インポート/エクスポートモーダル (import-export-modal)
+        - ファイル選択 (import-file)
+        - インポートボタン (import-button)
+        - エクスポートボタン (export-all)
+        - 閉じるボタン (close-modal)
+        - インポートステータス表示 (import-status)
+    - 新規作成ボタン (new-article)
+    - 検索ボックス (search-input)
+    - インポート/エクスポートボタン (import-export)
+-->
+</html> 

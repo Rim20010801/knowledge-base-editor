@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IndexedDB テスト</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    h1 {
+      color: #333;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 10px;
+    }
+    .card {
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      padding: 15px;
+      margin-bottom: 20px;
+      background-color: #f9f9f9;
+    }
+    button {
+      background-color: #4CAF50;
+      border: none;
+      color: white;
+      padding: 10px 15px;
+      text-align: center;
+      display: inline-block;
+      font-size: 14px;
+      margin: 5px 2px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    pre {
+      background-color: #f5f5f5;
+      padding: 10px;
+      border-radius: 5px;
+      overflow-x: auto;
+    }
+    .notification {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      color: white;
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .success-notification {
+      background-color: #4CAF50;
+    }
+    .error-notification {
+      background-color: #f44336;
+    }
+    .info-notification {
+      background-color: #2196F3;
+    }
+    textarea {
+      width: 100%;
+      height: 100px;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>IndexedDB テスト</h1>
+  
+  <div class="card">
+    <h2>DBステータス</h2>
+    <p id="db-status">未確認</p>
+    <button onclick="checkDBStatus()">ステータス確認</button>
+  </div>
+  
+  <div class="card">
+    <h2>記事追加テスト</h2>
+    <button onclick="createTestArticle()">テスト記事を作成</button>
+    <button onclick="createMultipleTestArticles(5)">複数記事を作成 (5)</button>
+  </div>
+  
+  <div class="card">
+    <h2>記事取得テスト</h2>
+    <div>
+      <label for="article-id">記事ID: </label>
+      <input type="text" id="article-id" placeholder="article_...">
+      <button onclick="getArticleById()">記事を取得</button>
+    </div>
+    <button onclick="getAllArticlesTest()">全記事を取得</button>
+  </div>
+  
+  <div class="card">
+    <h2>検索テスト</h2>
+    <div>
+      <input type="text" id="search-query" placeholder="検索クエリ...">
+      <button onclick="searchArticles()">検索</button>
+    </div>
+  </div>
+  
+  <div class="card">
+    <h2>記事削除テスト</h2>
+    <div>
+      <label for="delete-id">削除する記事ID: </label>
+      <input type="text" id="delete-id" placeholder="article_...">
+      <button onclick="deleteArticleTest()">記事を削除</button>
+    </div>
+    <button onclick="clearAllArticles()">全記事削除</button>
+  </div>
+  
+  <div class="card">
+    <h2>記事インポート/エクスポートテスト</h2>
+    <div>
+      <textarea id="import-data" placeholder="JSONデータを入力..."></textarea>
+      <button onclick="importArticlesTest()">インポート</button>
+    </div>
+    <div>
+      <button onclick="exportAllArticles()">全記事をエクスポート</button>
+    </div>
+  </div>
+  
+  <div class="card">
+    <h2>結果表示</h2>
+    <pre id="result-display">ここに結果が表示されます</pre>
+  </div>
+  
+  <script>
+    // 名前空間初期化
+    window.KB = window.KB || {};
+    window.KB.database = window.KB.database || {};
+    
+    // データベース設定
+    const DB = {
+      NAME: 'knowledgeBase',
+      VERSION: 1,
+      STORE: 'articles',
+      INDEXES: {
+        TITLE: 'by_title',
+        CATEGORY: 'by_category',
+        UPDATED: 'by_updated',
+        TAGS: 'by_tags'
+      }
+    };
+    
+    // DB操作の共通関数
+    async function dbOperation(storeName, mode, callback) {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB.NAME, DB.VERSION);
+        
+        request.onupgradeneeded = (event) => {
+          const db = event.target.result;
+          if (!db.objectStoreNames.contains(DB.STORE)) {
+            const store = db.createObjectStore(DB.STORE, { keyPath: 'id' });
+            store.createIndex(DB.INDEXES.TITLE, 'title', { unique: false });
+            store.createIndex(DB.INDEXES.CATEGORY, 'category', { unique: false });
+            store.createIndex(DB.INDEXES.UPDATED, 'updatedAt', { unique: false });
+            store.createIndex(DB.INDEXES.TAGS, 'tags', { unique: false, multiEntry: true });
+          }
+        };
+        
+        request.onerror = () => reject(request.error);
+        
+        request.onsuccess = (event) => {
+          const db = event.target.result;
+          const tx = db.transaction([storeName], mode);
+          const store = tx.objectStore(storeName);
+          
+          tx.oncomplete = () => db.close();
+          tx.onerror = () => reject(tx.error);
+          
+          callback(store, resolve, reject);
+        };
+      });
+    }
+    
+    // 記事を保存
+    async function saveArticle(article) {
+      if (!article.id) article.id = 'article_' + Date.now();
+      
+      const now = new Date().toISOString();
+      if (!article.createdAt) article.createdAt = now;
+      article.updatedAt = now;
+      
+      return dbOperation(DB.STORE, 'readwrite', (store, resolve, reject) => {
+        const request = store.put(article);
+        request.onsuccess = () => resolve(article);
+        request.onerror = () => reject(request.error);
+      });
+    }
+    
+    // IDで記事を取得
+    async function getArticle(id) {
+      return dbOperation(DB.STORE, 'readonly', (store, resolve) => {
+        const request = store.get(id);
+        request.onsuccess = () => resolve(request.result || null);
+      });
+    }
+    
+    // すべての記事を取得
+    async function getAllArticles() {
+      return dbOperation(DB.STORE, 'readonly', (store, resolve) => {
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result);
+      });
+    }
+    
+    // タイトルで検索
+    async function searchByTitle(query) {
+      const queryLower = query.toLowerCase();
+      return dbOperation(DB.STORE, 'readonly', (store, resolve) => {
+        const request = store.index(DB.INDEXES.TITLE).getAll();
+        request.onsuccess = () => {
+          resolve(request.result.filter(article => 
+            article.title.toLowerCase().includes(queryLower)
+          ));
+        };
+      });
+    }
+    
+    // フルテキスト検索
+    async function searchFullText(query) {
+      const queryLower = query.toLowerCase();
+      return dbOperation(DB.STORE, 'readonly', (store, resolve) => {
+        const request = store.getAll();
+        request.onsuccess = () => {
+          resolve(request.result.filter(article => {
+            // タイトル・カテゴリ・タグ検索
+            if (article.title.toLowerCase().includes(queryLower) ||
+                article.category.toLowerCase().includes(queryLower) ||
+                article.tags.some(tag => tag.toLowerCase().includes(queryLower))) {
+              return true;
+            }
+            
+            // コンテンツ検索
+            return article.content && article.content.toLowerCase().includes(queryLower);
+          }));
+        };
+      });
+    }
+    
+    // 記事を削除
+    async function deleteArticle(id) {
+      return dbOperation(DB.STORE, 'readwrite', (store, resolve) => {
+        const request = store.delete(id);
+        request.onsuccess = () => resolve(true);
+      });
+    }
+    
+    // 複数記事をインポート
+    async function importArticles(articles) {
+      if (!Array.isArray(articles) || articles.length === 0) {
+        return { success: 0, error: 0, message: '記事がありません' };
+      }
+      
+      let success = 0;
+      let error = 0;
+      
+      for (const article of articles) {
+        try {
+          if (!article || !article.id) {
+            error++;
+            continue;
+          }
+          
+          await saveArticle(article);
+          success++;
+        } catch (e) {
+          console.error('記事インポートエラー:', e, article);
+          error++;
+        }
+      }
+      
+      return { success, error };
+    }
+    
+    // DBの基本情報を確認
+    async function checkDBStatus() {
+      try {
+        const request = indexedDB.open(DB.NAME, DB.VERSION);
+        
+        request.onsuccess = async (event) => {
+          const db = event.target.result;
+          const stores = Array.from(db.objectStoreNames);
+          const count = await getAllArticles().then(articles => articles.length);
+          
+          document.getElementById('db-status').textContent = 
+            `接続成功 - ストア: ${stores.join(', ')} - 記事数: ${count}`;
+          
+          db.close();
+          showNotification('DB接続成功', 'success');
+        };
+        
+        request.onerror = (event) => {
+          document.getElementById('db-status').textContent = `接続エラー: ${event.target.error}`;
+          showNotification('DB接続エラー', 'error');
+        };
+      } catch (error) {
+        document.getElementById('db-status').textContent = `接続エラー: ${error.message}`;
+        showNotification('DB接続エラー', 'error');
+      }
+    }
+    
+    // テスト記事を作成
+    async function createTestArticle() {
+      try {
+        const article = {
+          id: 'article_' + Date.now(),
+          title: 'テスト記事 ' + new Date().toLocaleTimeString(),
+          category: 'テスト',
+          tags: ['テスト', 'サンプル'],
+          content: '# テスト記事\n\nこれはテスト用の記事です。\n\n* リスト項目1\n* リスト項目2\n\n```\nコードブロック\n```',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        
+        const result = await saveArticle(article);
+        displayResult('記事作成結果', result);
+        showNotification('記事が作成されました', 'success');
+      } catch (error) {
+        displayError('記事作成エラー', error);
+      }
+    }
+    
+    // 複数のテスト記事を作成
+    async function createMultipleTestArticles(count) {
+      try {
+        const articles = [];
+        
+        for (let i = 0; i < count; i++) {
+          articles.push({
+            id: 'article_' + Date.now() + '_' + i,
+            title: `テスト記事 ${i+1}`,
+            category: 'テスト',
+            tags: ['テスト', 'サンプル', `テスト${i+1}`],
+            content: `# テスト記事 ${i+1}\n\nこれはテスト用の記事です。\n\n* リスト項目1\n* リスト項目2\n\n\`\`\`\nコードブロック\n\`\`\``,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          });
+        }
+        
+        const importResult = await importArticles(articles);
+        displayResult('複数記事作成結果', importResult);
+        showNotification(`${importResult.success}件の記事が作成されました`, 'success');
+      } catch (error) {
+        displayError('複数記事作成エラー', error);
+      }
+    }
+    
+    // 記事IDから記事を取得
+    async function getArticleById() {
+      try {
+        const id = document.getElementById('article-id').value;
+        if (!id) {
+          showNotification('記事IDを入力してください', 'error');
+          return;
+        }
+        
+        const article = await getArticle(id);
+        if (article) {
+          displayResult('記事取得結果', article);
+          showNotification('記事を取得しました', 'success');
+        } else {
+          displayResult('記事取得結果', '記事が見つかりませんでした');
+          showNotification('記事が見つかりません', 'info');
+        }
+      } catch (error) {
+        displayError('記事取得エラー', error);
+      }
+    }
+    
+    // すべての記事を取得
+    async function getAllArticlesTest() {
+      try {
+        const articles = await getAllArticles();
+        displayResult('全記事取得結果', articles);
+        showNotification(`${articles.length}件の記事を取得しました`, 'success');
+      } catch (error) {
+        displayError('全記事取得エラー', error);
+      }
+    }
+    
+    // 記事検索
+    async function searchArticles() {
+      try {
+        const query = document.getElementById('search-query').value;
+        if (!query) {
+          showNotification('検索クエリを入力してください', 'error');
+          return;
+        }
+        
+        const results = await searchFullText(query);
+        displayResult('検索結果', results);
+        showNotification(`${results.length}件の記事が見つかりました`, 'success');
+      } catch (error) {
+        displayError('検索エラー', error);
+      }
+    }
+    
+    // 記事削除
+    async function deleteArticleTest() {
+      try {
+        const id = document.getElementById('delete-id').value;
+        if (!id) {
+          showNotification('削除する記事IDを入力してください', 'error');
+          return;
+        }
+        
+        const result = await deleteArticle(id);
+        displayResult('記事削除結果', result ? '削除成功' : '削除失敗');
+        showNotification(result ? '記事を削除しました' : '記事の削除に失敗しました', result ? 'success' : 'error');
+      } catch (error) {
+        displayError('記事削除エラー', error);
+      }
+    }
+    
+    // すべての記事を削除
+    async function clearAllArticles() {
+      try {
+        const articles = await getAllArticles();
+        let deleted = 0;
+        
+        for (const article of articles) {
+          await deleteArticle(article.id);
+          deleted++;
+        }
+        
+        displayResult('全記事削除結果', `${deleted}件の記事を削除しました`);
+        showNotification(`${deleted}件の記事を削除しました`, 'success');
+      } catch (error) {
+        displayError('全記事削除エラー', error);
+      }
+    }
+    
+    // 記事をインポート
+    async function importArticlesTest() {
+      try {
+        const jsonData = document.getElementById('import-data').value;
+        if (!jsonData) {
+          showNotification('インポートするJSONデータを入力してください', 'error');
+          return;
+        }
+        
+        let articles;
+        try {
+          articles = JSON.parse(jsonData);
+          if (!Array.isArray(articles)) {
+            articles = [articles]; // 単一記事の場合は配列に変換
+          }
+        } catch (e) {
+          showNotification('JSONのパースに失敗しました', 'error');
+          return;
+        }
+        
+        const result = await importArticles(articles);
+        displayResult('インポート結果', result);
+        showNotification(`${result.success}件の記事をインポートしました`, 'success');
+      } catch (error) {
+        displayError('インポートエラー', error);
+      }
+    }
+    
+    // すべての記事をエクスポート
+    async function exportAllArticles() {
+      try {
+        const articles = await getAllArticles();
+        const jsonData = JSON.stringify(articles, null, 2);
+        
+        displayResult('エクスポート結果', jsonData);
+        
+        // クリップボードにコピー
+        navigator.clipboard.writeText(jsonData)
+          .then(() => showNotification('JSONデータをクリップボードにコピーしました', 'success'))
+          .catch(() => showNotification('クリップボードへのコピーに失敗しました', 'error'));
+      } catch (error) {
+        displayError('エクスポートエラー', error);
+      }
+    }
+    
+    // 結果表示
+    function displayResult(title, data) {
+      const display = document.getElementById('result-display');
+      display.innerHTML = `<strong>${title}</strong>\n\n${
+        typeof data === 'object' ? JSON.stringify(data, null, 2) : data
+      }`;
+    }
+    
+    // エラー表示
+    function displayError(title, error) {
+      const display = document.getElementById('result-display');
+      display.innerHTML = `<strong>${title}</strong>\n\nエラー: ${error.message || error}`;
+      console.error(error);
+      showNotification(error.message || 'エラーが発生しました', 'error');
+    }
+    
+    // 通知表示
+    function showNotification(message, type = 'info') {
+      const notification = document.createElement('div');
+      notification.className = `notification ${type}-notification`;
+      notification.textContent = message;
+      document.body.appendChild(notification);
+      
+      setTimeout(() => {
+        notification.remove();
+      }, 3000);
+    }
+    
+    // 初期化
+    window.onload = function() {
+      checkDBStatus();
+    };
+    
+    // DBの関数をグローバルに公開
+    window.KB.database = {
+      saveArticle,
+      getArticle,
+      getAllArticles,
+      searchByTitle,
+      searchFullText,
+      deleteArticle,
+      importArticles
+    };
+  </script>
+</body>
+</html> 

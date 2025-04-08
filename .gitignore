@@ -1,0 +1,24 @@
+# macOSのシステムファイル
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# エディタの一時ファイル
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Cursorの設定ファイル（必要に応じてコメントアウトしてください）
+.cursor/
+
+# node_modulesがある場合
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# その他の一時ファイル
+*.log
+*.tmp
+.env 
