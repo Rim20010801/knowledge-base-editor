@@ -1,6 +1,7 @@
 /**
  * 記事のJSONスキーマ定義
  * このスキーマは記事データの構造を定義します
+ * マークダウン形式に対応するように更新
  */
 
 // 名前空間の初期化
@@ -21,59 +22,58 @@ const articleSchema = {
   updatedAt: "", // 更新日時（ISO形式：YYYY-MM-DDTHH:MM:SSZ）
   tags: [], // タグの配列
   
-  // 記事の内容（複数のブロックで構成）
-  content: []
+  // マークダウン形式の記事内容（テキストとして保持）
+  markdown: "",
+  
+  // メタデータ（追加情報、オプション）
+  metadata: {
+    summary: "",     // 記事の要約
+    status: "draft", // 記事の状態（draft/published）
+    references: [],  // 参考資料のリスト
+    relatedArticles: [] // 関連記事IDのリスト
+  }
 };
 
 /**
- * コンテンツブロックのテンプレート定義
- * 各コンテンツタイプの構造を定義します
+ * マークダウン変換に関するヘルパー関数やパラメータ
  */
-
-// 見出しブロックのテンプレート
-const headingBlock = {
-  type: "heading", // ブロックタイプ：見出し
-  level: 2,        // 見出しレベル（1〜6）、デフォルトは2
-  text: ""         // 見出しのテキスト内容
-};
-
-// 段落（本文）ブロックのテンプレート
-const paragraphBlock = {
-  type: "paragraph", // ブロックタイプ：段落
-  text: ""           // 段落のテキスト内容
-};
-
-// 画像ブロックのテンプレート
-const imageBlock = {
-  type: "image",    // ブロックタイプ：画像
-  src: "",          // 画像のパスまたはデータURI
-  caption: ""       // 画像の説明（オプション）
-};
-
-// リストブロックのテンプレート
-const listBlock = {
-  type: "list",      // ブロックタイプ：リスト
-  style: "unordered", // リストスタイル（ordered/unordered）
-  items: []          // リスト項目の配列
+const markdownRules = {
+  // マークダウン記法のサポート範囲
+  supported: {
+    headings: true,        // 見出し（# タイトル）
+    paragraphs: true,      // 段落（空行区切り）
+    emphasis: true,        // 強調（*斜体*、**太字**）
+    lists: true,           // リスト（- 項目、1. 項目）
+    links: true,           // リンク（[テキスト](URL)）
+    images: true,          // 画像（![代替テキスト](URL)）
+    blockquotes: true,     // 引用（> 引用文）
+    codeBlocks: true,      // コードブロック（```言語 コード```）
+    horizontalRules: true, // 水平線（---）
+    tables: true,          // 表（|列1|列2|）
+    strikethrough: true,   // 取り消し線（~~テキスト~~）
+    taskLists: true,       // タスクリスト（- [ ] タスク）
+    footnotes: false,      // 脚注（未サポート）
+    definitionLists: false // 定義リスト（未サポート）
+  },
+  
+  // 拡張マークダウン記法
+  extensions: {
+    highlights: true,      // ハイライト（==ハイライト==）
+    underline: true,       // 下線（__下線__）
+    colorText: true,       // 色付きテキスト（!!赤色テキスト!!、@@緑色テキスト@@）
+    fontSize: true         // フォントサイズ（^大きいテキスト^、~小さいテキスト~）
+  }
 };
 
 // 名前空間に追加
 window.KB.schema = {
   article: articleSchema,
-  blocks: {
-    heading: headingBlock,
-    paragraph: paragraphBlock,
-    image: imageBlock,
-    list: listBlock
-  }
+  markdownRules: markdownRules
 };
 
 // グローバルに公開（互換性のため）
 window.articleSchema = articleSchema;
-window.headingBlock = headingBlock;
-window.paragraphBlock = paragraphBlock;
-window.imageBlock = imageBlock;
-window.listBlock = listBlock;
+window.markdownRules = markdownRules;
 
 // 名前空間をグローバルに公開
 window.KB = window.KB; 
